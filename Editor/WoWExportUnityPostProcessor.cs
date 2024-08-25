@@ -1,11 +1,7 @@
-using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
-using UnityEditor.AssetImporters;
 using System.IO;
 using System.Text.RegularExpressions;
-using System.Linq;
-using System;
 using WowUnity;
 
 public class WoWExportUnityPostprocessor : AssetPostprocessor
@@ -20,14 +16,17 @@ public class WoWExportUnityPostprocessor : AssetPostprocessor
         return 1;
     }
 
-    static private bool ValidAsset(string path)
+    static public bool ValidAsset(string path)
     {
-        if (!path.Contains(".obj"))
+        if (!path.EndsWith(".obj"))
             return false;
-        if (path.Contains(".phys.obj"))
+        if (path.EndsWith(".phys.obj"))
             return false;
 
-        return true;
+        return (
+            File.Exists(Path.GetDirectoryName(path) + "/" + Path.GetFileNameWithoutExtension(path) + ".json") ||
+            ADTUtility.IsAdtObj(path)
+        );
     }
 
     public void OnPreprocessTexture()
@@ -50,32 +49,26 @@ public class WoWExportUnityPostprocessor : AssetPostprocessor
 
     public void OnPreprocessModel()
     {
+        ModelImporter modelImporter = assetImporter as ModelImporter;
+
         if (!ValidAsset(assetPath))
         {
+            if (assetPath.EndsWith(".phys.obj"))
+            {
+                modelImporter.bakeAxisConversion = true;
+            }
             return;
         }
 
-        ModelImporter modelImporter = assetImporter as ModelImporter;
+        Debug.Log($"{assetPath}: processing wow model");
+
         modelImporter.bakeAxisConversion = true;
         modelImporter.generateSecondaryUV = true;
         modelImporter.secondaryUVMarginMethod = ModelImporterSecondaryUVMarginMethod.Calculate;
         modelImporter.secondaryUVMinLightmapResolution = 16;
         modelImporter.secondaryUVMinObjectScale = 1;
 
-        modelImporter.materialImportMode = ModelImporterMaterialImportMode.ImportViaMaterialDescription;
-        modelImporter.materialName = ModelImporterMaterialName.BasedOnMaterialName;
-        modelImporter.materialSearch = ModelImporterMaterialSearch.RecursiveUp;
-    }
-
-    public void OnPreprocessMaterialDescription(MaterialDescription description, Material material, AnimationClip[] materialAnimation)
-    {
-        if (!ValidAsset(assetPath))
-        {
-            return;
-        }
-
-        M2Utility.M2 metadata = M2Utility.ReadMetadataFor(assetPath);
-        material = MaterialUtility.ConfigureMaterial(description, material, assetPath, metadata);
+        modelImporter.materialImportMode = ModelImporterMaterialImportMode.None;
     }
 
     public void OnPostprocessModel(GameObject gameObject)
@@ -85,54 +78,35 @@ public class WoWExportUnityPostprocessor : AssetPostprocessor
             return;
         }
 
-        GameObject physicsPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath.Replace(".obj", ".phys.obj"));
-        MeshRenderer[] childRenderers = gameObject.GetComponentsInChildren<MeshRenderer>();
-
-        if (physicsPrefab == null || physicsPrefab.GetComponentInChildren<MeshFilter>() == null)
+        if (!File.Exists(assetPath.Replace(".obj", ".phys.obj")))
         {
+            MeshRenderer[] childRenderers = gameObject.GetComponentsInChildren<MeshRenderer>();
             foreach (MeshRenderer child in childRenderers)
             {
                 child.gameObject.AddComponent<MeshCollider>();
             }
         }
-        else
-        {
-            GameObject collider = new GameObject();
-            collider.transform.SetParent(gameObject.transform);
-            collider.name = "Collision";
-            MeshFilter collisionMesh = physicsPrefab.GetComponentInChildren<MeshFilter>();
-            MeshCollider parentCollider = collider.AddComponent<MeshCollider>();
-            parentCollider.sharedMesh = collisionMesh.sharedMesh;
-        }
     }
 
     static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
     {
-        string path;
-
-        for(int i = 0; i < importedAssets.Length; i++)
+        var hasWow = false;
+        foreach (string path in importedAssets)
         {
-            path = importedAssets[i];
-
-            //M2 Utility Queue
             if (ValidAsset(path))
             {
-                M2Utility.QueueMetadata(path);
-            }
-
-            //ADT/WMO Item Collection Queue
-            if (Path.GetFileName(path).Contains("_ModelPlacementInformation.csv"))
-            {
-                ItemCollectionUtility.QueuePlacementData(path);
-            }
-
-            //ADT Liquid Volume Queue
-            if (Regex.IsMatch(path, @"liquid_\d{2}_\d{2}(?=\.json)"))
-            {
-                LiquidUtility.QueueLiquidData(path);
+                AssetConversionManager.QueuePostprocess(path);
+                hasWow = true;
             }
         }
 
-        EditorApplication.update += AssetConversionManager.ProcessAssets;
+        if (hasWow && !AssetConversionManager.IsBusy())
+        {
+            var processNow = EditorUtility.DisplayDialog("WoW assets imported", "There were WoW assets imported, they need to be processed to work properly. Do you want to process them now? They can also be processed later by opening menu bar Window > wow.unity and clicking Process under All Assets.", "Process now", "Do it later");
+            if (processNow)
+            {
+                AssetConversionManager.JobPostprocessAllAssets();
+            }
+        }
     }
 }

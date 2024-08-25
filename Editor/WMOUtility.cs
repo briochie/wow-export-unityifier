@@ -1,12 +1,51 @@
 using Newtonsoft.Json;
-using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using UnityEditor;
 using UnityEngine;
 
 namespace WowUnity
 {
-    class WMOUtility
+    public class WMOUtility
     {
+        public static bool IsWMO(string jsonData)
+        {
+            var metadata = JsonConvert.DeserializeObject<WMO>(jsonData);
+            return metadata.fileType == "wmo";
+        }
+
+        public static void PostProcessImport(string path, string jsonData)
+        {
+            var metadata = JsonConvert.DeserializeObject<WMO>(jsonData);
+            if (metadata.fileType != "wmo") {
+                return;
+            }
+
+            Debug.Log($"{path}: processing wmo");
+
+            if (M2Utility.FindPrefab(path) != null)
+            {
+                return;
+            }
+
+            M2Utility.ProcessTextures(metadata.textures, Path.GetDirectoryName(path));
+
+            var importedInstance = M2Utility.InstantiateImported(path);
+
+            Renderer[] renderers = importedInstance.GetComponentsInChildren<Renderer>();
+
+            var materials = MaterialUtility.GetWMOMaterials(metadata);
+
+            for (uint rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
+            {
+                var renderer = renderers[rendererIndex];
+                renderer.material = materials[renderer.name];
+            }
+            AssetDatabase.Refresh();
+
+            M2Utility.SaveAsPrefab(importedInstance, path);
+        }
+
         public static bool AssignVertexColors(WMOUtility.Group group, List<GameObject> gameObjects)
         {
             if (gameObjects.Count != group.renderBatches.Count)
@@ -54,15 +93,18 @@ namespace WowUnity
 
         public class WMO
         {
+            public string fileType;
             public uint fileDataID;
             public string fileName;
             public uint version;
-            public byte[] ambientColor;
+            public uint ambientColor;
             public uint areaTableID;
-            public BitArray flags;
+            public short flags;
             public List<Group> groups;
             public List<string> groupNames;
             public List<M2Utility.Texture> textures;
+            public List<Material> materials;
+            public List<DoodadSet> doodadSets;
         }
 
         public class Group
@@ -79,8 +121,29 @@ namespace WowUnity
         {
             public ushort firstVertex;
             public ushort lastVertex;
-            public BitArray flags;
+            public short flags;
             public uint materialID;
+        }
+
+        public class Material {
+            public short flags;
+            public int shader;
+            public uint blendMode;
+            public uint texture1;
+			public uint color1;
+			public uint color1b;
+			public uint texture2;
+			public uint color2;
+			public uint groupType;
+			public uint texture3;
+			public uint color3;
+			public uint flags3;
+        }
+
+        public class DoodadSet {
+            public string name;
+			public uint firstInstanceIndex;
+			public uint doodadCount;
         }
     }
 }

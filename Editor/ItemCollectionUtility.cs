@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using System.Globalization;
 using UnityEngine;
 using UnityEditor;
@@ -18,15 +16,7 @@ namespace WowUnity
         public static readonly float MAP_SIZE = MAXIMUM_DISTANCE_FROM_ORIGIN * 2f;
         public static readonly float ADT_SIZE = MAP_SIZE / 64f;
 
-        private static List<string> queuedPlacementInformationPaths = new List<string>();
-        private static List<string> missingFilesInQueue = new List<string>();
-
-        public static bool isADT(TextAsset modelPlacementInformation)
-        {
-            return Regex.IsMatch(modelPlacementInformation.name, @"adt_\d{2}_\d{2}");
-        }
-
-        public static void GenerateADT(GameObject prefab, TextAsset modelPlacementInformation)
+        public static void PlaceModels(GameObject prefab, TextAsset modelPlacementInformation)
         {
             GameObject instantiatedGameObject = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
             instantiatedGameObject.isStatic = true;
@@ -35,32 +25,62 @@ namespace WowUnity
                 childTransform.gameObject.isStatic = true;
             }
 
-            string path = AssetDatabase.GetAssetPath(prefab);
+            PlaceModelsOnPrefab(instantiatedGameObject, modelPlacementInformation);
 
-            ParseFileAndSpawnDoodads(instantiatedGameObject, modelPlacementInformation);
-
-            string parentPath = AssetDatabase.GetAssetPath(prefab);
-
-            if (Path.GetExtension(parentPath) == ".prefab")
-            {
-                PrefabUtility.ApplyPrefabInstance(instantiatedGameObject, InteractionMode.AutomatedAction);
-                PrefabUtility.SavePrefabAsset(prefab);
-            }
-            else
-            {
-                PrefabUtility.SaveAsPrefabAsset(instantiatedGameObject, parentPath.Replace(Path.GetExtension(parentPath), ".prefab"));
-            }
+            PrefabUtility.ApplyPrefabInstance(instantiatedGameObject, InteractionMode.AutomatedAction);
+            PrefabUtility.SavePrefabAsset(prefab);
 
             Object.DestroyImmediate(instantiatedGameObject);
         }
 
-        private static void ParseFileAndSpawnDoodads(GameObject instantiatedPrefabGObj, TextAsset modelPlacementInformation)
+        private static Transform GetOrCreateRoot(Transform destination, string name)
         {
+            var root = destination.Find(name);
+            if (root == null)
+            {
+                var newRootGO = new GameObject(name) { isStatic = true };
+                newRootGO.transform.parent = destination;
+                root = newRootGO.transform;
+            }
+            return root;
+        }
+
+        private static void PlaceModelsOnPrefab(GameObject instantiatedPrefabGObj, TextAsset modelPlacementInformation)
+        {
+            var isAdt = Regex.IsMatch(modelPlacementInformation.name, @"adt_\d+_\d+");
+
+            var doodadSetRoot = GetOrCreateRoot(instantiatedPrefabGObj.transform, isAdt ? "EnvironmentSet" : "DoodadSets");
+
+            if (doodadSetRoot == null)
+            {
+                Debug.LogWarning("No doodad set root found in " + instantiatedPrefabGObj.name);
+                return;
+            }
+
+            if (doodadSetRoot.Find("doodadsplaced") != null)
+                return;
+
+            ParseFileAndSpawnDoodads(doodadSetRoot, modelPlacementInformation);
+            if (isAdt)
+                ParseFileAndSpawnDoodads(GetOrCreateRoot(instantiatedPrefabGObj.transform, "WMOSet"), modelPlacementInformation, typeToPlace: "wmo");
+
+            var placed = new GameObject("doodadsplaced");
+            placed.transform.parent = doodadSetRoot.transform;
+        }
+
+        private static void ParseFileAndSpawnDoodads(Transform doodadSetRoot, TextAsset modelPlacementInformation, string typeToPlace = "m2", bool useSetSubtrees = true)
+        {
+            var isAdt = Regex.IsMatch(modelPlacementInformation.name, @"adt_\d+_\d+");
+
+            var placementFileDir = Path.GetDirectoryName(AssetDatabase.GetAssetPath(modelPlacementInformation));
             string[] records = modelPlacementInformation.text.Split(CSV_LINE_SEPERATOR);
             foreach (string record in records.Skip(1))
             {
                 string[] fields = record.Split(CSV_COLUMN_SEPERATOR);
-                string doodadPath = Path.GetDirectoryName(PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(instantiatedPrefabGObj)) + Path.DirectorySeparatorChar + fields[0];
+                if (fields.Length < 11)
+                    continue;
+
+                string doodadPath = placementFileDir + Path.DirectorySeparatorChar + fields[0];
                 doodadPath = Path.GetFullPath(doodadPath);
                 doodadPath = $"Assets{Path.DirectorySeparatorChar}" + doodadPath.Substring(Application.dataPath.Length + 1); //This is so nifty :3
 
@@ -68,8 +88,11 @@ namespace WowUnity
                 Quaternion doodadRotation = Quaternion.identity;
                 float doodadScale = float.Parse(fields[8], CultureInfo.InvariantCulture);
 
-                if (isADT(modelPlacementInformation))
+                if (isAdt)
                 {
+                    var doodadType = fields[10];
+                    if (doodadType != typeToPlace)
+                        continue;
 
                     doodadPosition.x = MAXIMUM_DISTANCE_FROM_ORIGIN - float.Parse(fields[1], CultureInfo.InvariantCulture);
                     doodadPosition.z = (MAXIMUM_DISTANCE_FROM_ORIGIN - float.Parse(fields[3], CultureInfo.InvariantCulture)) * -1f;
@@ -81,34 +104,56 @@ namespace WowUnity
                     eulerRotation.z = float.Parse(fields[4], CultureInfo.InvariantCulture) * -1;
 
                     doodadRotation.eulerAngles = eulerRotation;
+
+                    var spawned = SpawnDoodad(doodadPath, doodadPosition, doodadRotation, doodadScale, doodadSetRoot);
+                    if (doodadType == "wmo")
+                    {
+                        var doodadSets = fields[13].Split(",");
+                        foreach (var setName in doodadSets)
+                        {
+                            var childObj = spawned.transform.Find($"DoodadSets/{setName}");
+                            if (childObj != null)
+                            {
+                                childObj.gameObject.SetActive(true);
+                            }
+                        }
+                    }
                 }
                 else
                 {
                     doodadPosition = new Vector3(
-                        float.Parse(fields[1], CultureInfo.InvariantCulture), 
-                        float.Parse(fields[3], CultureInfo.InvariantCulture), 
+                        float.Parse(fields[1], CultureInfo.InvariantCulture),
+                        float.Parse(fields[3], CultureInfo.InvariantCulture),
                         float.Parse(fields[2], CultureInfo.InvariantCulture)
                     );
                     doodadRotation = new Quaternion(
-                        float.Parse(fields[5], CultureInfo.InvariantCulture) * -1, 
-                        float.Parse(fields[7], CultureInfo.InvariantCulture), 
-                        float.Parse(fields[6], CultureInfo.InvariantCulture) * -1, 
+                        float.Parse(fields[5], CultureInfo.InvariantCulture) * -1,
+                        float.Parse(fields[7], CultureInfo.InvariantCulture),
+                        float.Parse(fields[6], CultureInfo.InvariantCulture) * -1,
                         float.Parse(fields[4], CultureInfo.InvariantCulture) * -1
                     );
-                }
 
-                SpawnDoodad(doodadPath, doodadPosition, doodadRotation, doodadScale, instantiatedPrefabGObj.transform);
+                    var setName = fields[9];
+                    var placementRoot = doodadSetRoot;
+                    if (useSetSubtrees)
+                    {
+                        placementRoot = GetOrCreateRoot(doodadSetRoot, setName);
+                        placementRoot.gameObject.SetActive(setName == "Set_$DefaultGlobal");
+                    }
+
+                    SpawnDoodad(doodadPath, doodadPosition, doodadRotation, doodadScale, placementRoot);
+                }
             }
         }
 
-        private static void SpawnDoodad(string path, Vector3 position, Quaternion rotation, float scaleFactor, Transform parent)
+        private static GameObject SpawnDoodad(string path, Vector3 position, Quaternion rotation, float scaleFactor, Transform parent)
         {
-            GameObject exisitingPrefab = M2Utility.FindOrCreatePrefab(path);
+            GameObject exisitingPrefab = M2Utility.FindPrefab(path);
 
             if (exisitingPrefab == null)
             {
                 Debug.LogWarning("Object was not spawned because it could not be found: " + path);
-                return;
+                return null;
             }
 
             GameObject newDoodadInstance = PrefabUtility.InstantiatePrefab(exisitingPrefab, parent) as GameObject;
@@ -116,36 +161,8 @@ namespace WowUnity
             newDoodadInstance.transform.localPosition = position;
             newDoodadInstance.transform.localRotation = rotation;
             newDoodadInstance.transform.localScale = new Vector3(scaleFactor, scaleFactor, scaleFactor);
-        }
 
-        public static void QueuePlacementData(string filePath)
-        {
-            queuedPlacementInformationPaths.Add(filePath);
-        }
-
-        public static void BeginQueue()
-        {
-            if (queuedPlacementInformationPaths.Count == 0)
-            {
-                return;
-            }
-
-            List<string> iteratingList = new List<string>(queuedPlacementInformationPaths);
-
-            foreach (string path in iteratingList)
-            {
-                TextAsset placementData = AssetDatabase.LoadAssetAtPath<TextAsset>(path);
-                string prefabPath = Path.GetDirectoryName(path) + Path.DirectorySeparatorChar + Path.GetFileName(path).Replace("_ModelPlacementInformation.csv", ".obj");
-                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-                GenerateADT(prefab, placementData);
-
-                queuedPlacementInformationPaths.Remove(path);
-            }
-
-            foreach (string missingFilePath in missingFilesInQueue)
-            {
-                Debug.Log("Warning, import could not be found: " + missingFilePath);
-            }
+            return newDoodadInstance;
         }
     }
 }
