@@ -35,6 +35,25 @@ namespace WowUnity
             BlendAdd = 7
         }
 
+            [Serializable]
+        public struct ADTChunk
+        {
+            public List<Layer> layers;
+        }
+
+        [Serializable]
+        public struct Layer
+        {
+            public int index;
+            public int effectID;
+            public int fileDataID;
+            public int scale;
+            public string file;
+            public string heightFile;
+            public float heightScale;
+            public float heightOffset;
+        }
+
         public static Material ConfigureMaterial(MaterialDescription description, Material material, string modelImportPath, M2Utility.M2 metadata)
         {
             if (Regex.IsMatch(Path.GetFileNameWithoutExtension(modelImportPath), @"adt_\d{2}_\d{2}"))
@@ -106,23 +125,43 @@ namespace WowUnity
             var fileContents = sr.ReadToEnd();
             sr.Close();
 
-            TerrainMaterialGenerator.Chunk newChunk = JsonUtility.FromJson<TerrainMaterialGenerator.Chunk>(fileContents);
+            ADTChunk newChunk = JsonUtility.FromJson<ADTChunk>(fileContents);
 
             Vector4 scaleVector = new Vector4();
-            TerrainMaterialGenerator.Layer currentLayer;
+            Vector4 heightScaleVector = new Vector4();
+            Vector4 heightOffsetVector = new Vector4();
+
+            Layer currentLayer;
+
             for (int i = 0; i < newChunk.layers.Count; i++)
             {
                 currentLayer = newChunk.layers[i];
+
                 string texturePath = Path.Combine(Path.GetDirectoryName(@assetPath), @currentLayer.file);
                 texturePath = Path.GetFullPath(texturePath);
                 texturePath = texturePath.Substring(texturePath.IndexOf($"Assets{Path.DirectorySeparatorChar}"));
 
                 Texture2D layerTexture = (Texture2D)AssetDatabase.LoadAssetAtPath(texturePath, typeof(Texture2D));
                 mat.SetTexture("Layer_" + i, layerTexture);
+
+                // If height data is included, we'll add that to the shader as well:
+                if(@currentLayer.heightFile != "") {
+                    string heightTexturePath = Path.Combine(Path.GetDirectoryName(@assetPath), @currentLayer.heightFile);
+                    heightTexturePath = Path.GetFullPath(heightTexturePath);
+                    heightTexturePath = heightTexturePath.Substring(heightTexturePath.IndexOf($"Assets{Path.DirectorySeparatorChar}"));
+
+                    Texture2D heightLayerTexture = (Texture2D)AssetDatabase.LoadAssetAtPath(heightTexturePath, typeof(Texture2D));
+                    mat.SetTexture("Height_" + i, heightLayerTexture);
+                }
+
                 scaleVector[i] = currentLayer.scale;
+                heightScaleVector[i] = currentLayer.heightScale;
+                heightOffsetVector[i] = currentLayer.heightOffset;
             }
 
             mat.SetVector("Scale", scaleVector);
+            mat.SetVector("Height_Scale", heightScaleVector);
+            mat.SetVector("Height_Offset", heightOffsetVector);
         }
 
         public static void ExtractMaterialFromAsset(Material material)
