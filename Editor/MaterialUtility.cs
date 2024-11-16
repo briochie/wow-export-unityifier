@@ -128,8 +128,8 @@ namespace WowUnity
             ADTChunk newChunk = JsonUtility.FromJson<ADTChunk>(fileContents);
 
             Vector4 scaleVector = new Vector4();
-            Vector4 heightScaleVector = new Vector4();
-            Vector4 heightOffsetVector = new Vector4();
+            Vector4 heightScaleVector = new Vector4(1, 1, 1, 1);
+            Vector4 heightOffsetVector = new Vector4(0, 0, 0, 0);
 
             Layer currentLayer;
 
@@ -145,18 +145,22 @@ namespace WowUnity
                 mat.SetTexture("Layer_" + i, layerTexture);
 
                 // If height data is included, we'll add that to the shader as well:
-                if(@currentLayer.heightFile != "") {
+                if(@currentLayer.heightFile != null) {
                     string heightTexturePath = Path.Combine(Path.GetDirectoryName(@assetPath), @currentLayer.heightFile);
                     heightTexturePath = Path.GetFullPath(heightTexturePath);
                     heightTexturePath = heightTexturePath.Substring(heightTexturePath.IndexOf($"Assets{Path.DirectorySeparatorChar}"));
 
+                    // Properly Configure the Height texture data
+                    ConfigureDataTexture(heightTexturePath);
+
                     Texture2D heightLayerTexture = (Texture2D)AssetDatabase.LoadAssetAtPath(heightTexturePath, typeof(Texture2D));
                     mat.SetTexture("Height_" + i, heightLayerTexture);
+
+                    heightScaleVector[i] = currentLayer.heightScale;
+                    heightOffsetVector[i] = currentLayer.heightOffset;
                 }
 
                 scaleVector[i] = currentLayer.scale;
-                heightScaleVector[i] = currentLayer.heightScale;
-                heightOffsetVector[i] = currentLayer.heightOffset;
             }
 
             mat.SetVector("Scale", scaleVector);
@@ -190,6 +194,18 @@ namespace WowUnity
 
             AssetDatabase.WriteImportSettingsIfDirty(assetPath);
             AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+        }
+
+        public static void ConfigureDataTexture(string assetPath) {
+            TextureImporter textureImporter = (TextureImporter)AssetImporter.GetAtPath(assetPath);
+
+            textureImporter.textureType = TextureImporterType.Default;
+            textureImporter.wrapMode = TextureWrapMode.Clamp;
+            textureImporter.textureCompression = TextureImporterCompression.Uncompressed;
+            textureImporter.filterMode = FilterMode.Bilinear;
+            textureImporter.mipmapEnabled = false;
+            textureImporter.sRGBTexture = false;
+            textureImporter.mipmapEnabled = false;
         }
     }
 }

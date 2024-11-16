@@ -39,13 +39,7 @@ public class WoWExportUnityPostprocessor : AssetPostprocessor
             return;
         }
 
-        TextureImporter textureImporter = (TextureImporter)assetImporter;
-        textureImporter.textureType = TextureImporterType.Default;
-        textureImporter.wrapMode = TextureWrapMode.Clamp;
-        textureImporter.textureCompression = TextureImporterCompression.Uncompressed;
-        textureImporter.filterMode = FilterMode.Bilinear;
-        textureImporter.mipmapEnabled = false;
-        textureImporter.sRGBTexture = false;
+        MaterialUtility.ConfigureDataTexture(assetPath);
     }
 
     public void OnPreprocessModel()
