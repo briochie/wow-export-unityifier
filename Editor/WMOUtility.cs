@@ -7,7 +7,7 @@ namespace WowUnity
 {
     class WMOUtility
     {
-        public static bool AssignVertexColors(WMOUtility.Group group, List<GameObject> gameObjects)
+        public static bool AssignVertexColors(WMO.Group group, List<GameObject> gameObjects)
         {
             if (gameObjects.Count != group.renderBatches.Count)
             {
@@ -18,7 +18,7 @@ namespace WowUnity
             for (int i = 0; i < gameObjects.Count; i++)
             {
                 GameObject gameObject = gameObjects[i];
-                WMOUtility.RenderBatch renderBatch = group.renderBatches[i];
+                WMO.RenderBatch renderBatch = group.renderBatches[i];
                 MeshFilter meshFilter = gameObject.GetComponent<MeshFilter>();
                 Mesh mesh = meshFilter.sharedMesh;
                 
@@ -34,7 +34,7 @@ namespace WowUnity
             return true;
         }
 
-        static Color[] GetVertexColorsInRange(WMOUtility.Group group, int start, int end)
+        static Color[] GetVertexColorsInRange(WMO.Group group, int start, int end)
         {
             List<byte[]> vertexColors = group.vertexColors.GetRange(start, end - start);
             List<Color> parsedColors = new List<Color>();
@@ -50,37 +50,6 @@ namespace WowUnity
             }
 
             return parsedColors.ToArray();
-        }
-
-        public class WMO
-        {
-            public uint fileDataID;
-            public string fileName;
-            public uint version;
-            public byte[] ambientColor;
-            public uint areaTableID;
-            public BitArray flags;
-            public List<Group> groups;
-            public List<string> groupNames;
-            public List<M2Utility.Texture> textures;
-        }
-
-        public class Group
-        {
-            public string groupName;
-            public bool enabled;
-            public uint version;
-            public uint groupID;
-            public List<RenderBatch> renderBatches;
-            public List<byte[]> vertexColors;
-        }
-
-        public class RenderBatch
-        {
-            public ushort firstVertex;
-            public ushort lastVertex;
-            public BitArray flags;
-            public uint materialID;
         }
     }
 }

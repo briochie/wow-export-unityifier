@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System;
 using System.Text.RegularExpressions;
+using WowUnity;
 
 public class TerrainMaterialGenerator : EditorWindow
 {
@@ -45,7 +46,7 @@ public class TerrainMaterialGenerator : EditorWindow
     {
         foreach (TextAsset chunkData in jsonFiles)
         {
-            Chunk newChunk = JsonUtility.FromJson<Chunk>(chunkData.text);
+            ADT.Chunk newChunk = JsonUtility.FromJson<ADT.Chunk>(chunkData.text);
 
             string filePath = AssetDatabase.GetAssetPath(chunkData);
             Match match = Regex.Match(filePath, @"tex_\d{2}_\d{2}_\d{1,3}(?=\.json)");
@@ -55,7 +56,7 @@ public class TerrainMaterialGenerator : EditorWindow
             currentChunkMaterial.shader = terrainShader;
 
             Vector4 scaleVector = new Vector4();
-            Layer currentLayer;
+            ADT.Layer currentLayer;
             for (int i = 0; i < newChunk.layers.Count; i++)
             {
                 currentLayer = newChunk.layers[i];
@@ -68,24 +69,5 @@ public class TerrainMaterialGenerator : EditorWindow
 
             currentChunkMaterial.SetVector("Scale", scaleVector);
         }
-    }
-
-    [Serializable]
-    public struct Chunk
-    {
-        public List<Layer> layers;
-    }
-
-    [Serializable]
-    public struct Layer
-    {
-        public int index;
-        public int effectID;
-        public int fileDataID;
-        public int scale;
-        public string file;
-        public string heightFile;
-        public float heightScale;
-        public float heightOffset;
     }
 }
