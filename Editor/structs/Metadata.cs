@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace WowUnity
 {
-    public struct Metadata
+    public class Metadata
     {
         public string fileType;
     }
